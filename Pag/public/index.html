@@ -1,0 +1,76 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Demo Gmail + n8n (B2)</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; max-width: 640px; margin: 40px auto; padding: 0 16px; }
+      h1 { font-size: 22px; }
+      .card { border: 1px solid #ddd; border-radius: 8px; padding: 16px; margin-top: 16px; }
+      label { display:block; margin: 8px 0 4px; }
+      input, button { padding: 8px 12px; font-size: 14px; }
+      button { cursor: pointer; }
+    </style>
+  </head>
+  <body>
+    <h1>Demo Gmail + n8n (B2)</h1>
+
+    <div class="card">
+      <h3>1) Conectar Gmail</h3>
+      <form method="GET" action="/auth/google">
+        <label for="userId">User ID</label>
+        <input id="userId" name="userId" value="demo-user-1" />
+        <div style="margin-top:12px;">
+          <button type="submit">Conectar Gmail</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>2) Procesar en n8n</h3>
+      <form id="process-form">
+        <label for="userId2">User ID</label>
+        <input id="userId2" name="userId" value="demo-user-1" />
+        <label for="maxResults" style="margin-top:12px;">Máximo de mensajes</label>
+        <input id="maxResults" name="maxResults" type="number" min="1" max="500" value="10" />
+        <div style="margin-top:12px;">
+          <button id="process-btn" type="submit">Procesar</button>
+        </div>
+      </form>
+      <pre id="out" style="margin-top:12px; background:#f8f8f8; padding:12px; border-radius:6px;"></pre>
+    </div>
+
+    <script>
+      const form = document.getElementById('process-form');
+      const btn = document.getElementById('process-btn');
+      const out = document.getElementById('out');
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const userId = document.getElementById('userId2').value;
+        const maxResults = parseInt(document.getElementById('maxResults').value || '10', 10);
+        btn.disabled = true;
+        const prevText = btn.textContent;
+        btn.textContent = 'Procesando…';
+        out.textContent = 'Procesando, por favor espera…';
+        const res = await fetch('/process', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ userId, filtros: { maxResults } })
+        });
+        const ct = res.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          const json = await res.json();
+          out.textContent = JSON.stringify(json, null, 2);
+        } else {
+          const text = await res.text();
+          out.textContent = text;
+        }
+        btn.disabled = false;
+        btn.textContent = prevText;
+      });
+    </script>
+  </body>
+  </html>
+
+
