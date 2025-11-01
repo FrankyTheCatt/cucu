@@ -71,11 +71,15 @@ async function exchangeCodeForTokens(code) {
 }
 
 async function getUserInfo(accessToken) {
-  const oauth2Client = getOAuth2Client();
-  oauth2Client.setCredentials({ access_token: accessToken });
-  const oauth2 = google.oauth2({ auth: oauth2Client, version: 'v2' });
-  const { data } = await oauth2.userinfo.get();
-  return data;
+  const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
+    headers: {
+      'Authorization': `Bearer ${accessToken}`
+    }
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to get user info: ${response.status} ${response.statusText}`);
+  }
+  return await response.json();
 }
 
 async function refreshAccessToken(refreshToken) {
@@ -137,12 +141,13 @@ app.get('/auth/google/callback', async (req, res) => {
     const tokens = await exchangeCodeForTokens(code);
     console.log('Tokens received');
     
+    // Guardar refresh token
     if (tokens.refresh_token) {
       userIdToRefreshToken.set(userId, tokens.refresh_token);
     }
     
-    // Obtener info del usuario
-    console.log('Getting user info...');
+    // Obtener info del usuario usando el token de acceso
+    console.log('Getting user info with access token:', tokens.access_token?.substring(0, 20) + '...');
     const userInfo = await getUserInfo(tokens.access_token);
     console.log('User info:', userInfo);
     const email = userInfo.email;
