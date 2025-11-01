@@ -1,0 +1,24 @@
+﻿# Variables de entorno
+.env
+.env.local
+.env.*.local
+
+# Docker volumes
+db_storage/
+n8n_storage/
+
+# Node modules
+node_modules/
+
+# Logs
+*.log
+logs/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
