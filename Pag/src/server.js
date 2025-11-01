@@ -71,15 +71,23 @@ async function exchangeCodeForTokens(code) {
 }
 
 async function getUserInfo(accessToken) {
+  console.log('getUserInfo - accessToken exists:', !!accessToken);
+  console.log('getUserInfo - first 20 chars:', accessToken?.substring(0, 20));
+  
   const response = await fetch('https://www.googleapis.com/oauth2/v2/userinfo', {
     headers: {
       'Authorization': `Bearer ${accessToken}`
     }
   });
+  console.log('getUserInfo - response status:', response.status);
   if (!response.ok) {
+    const errorText = await response.text();
+    console.log('getUserInfo - error text:', errorText);
     throw new Error(`Failed to get user info: ${response.status} ${response.statusText}`);
   }
-  return await response.json();
+  const data = await response.json();
+  console.log('getUserInfo - success, data keys:', Object.keys(data));
+  return data;
 }
 
 async function refreshAccessToken(refreshToken) {
