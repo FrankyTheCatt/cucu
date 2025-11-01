@@ -71,7 +71,7 @@ async function exchangeCodeForTokens(code) {
 }
 
 async function getUserInfo(accessToken) {
-  const oauth2Client = new google.auth.OAuth2Client();
+  const oauth2Client = getOAuth2Client();
   oauth2Client.setCredentials({ access_token: accessToken });
   const oauth2 = google.oauth2({ auth: oauth2Client, version: 'v2' });
   const { data } = await oauth2.userinfo.get();
@@ -123,34 +123,53 @@ app.get('/auth/google', (req, res) => {
 // Callback de Google
 app.get('/auth/google/callback', async (req, res) => {
   try {
+    console.log('=== CALLBACK OAUTH ===');
+    console.log('Query:', req.query);
     const code = req.query.code;
     const state = req.query.state;
-    if (!code || !state) return res.status(400).send('Faltan code/state');
+    if (!code || !state) {
+      console.error('Faltan code/state');
+      return res.status(400).send('Faltan code/state');
+    }
+    
+    console.log('Exchanging code for tokens...');
     const { userId } = JSON.parse(state);
     const tokens = await exchangeCodeForTokens(code);
+    console.log('Tokens received');
+    
     if (tokens.refresh_token) {
       userIdToRefreshToken.set(userId, tokens.refresh_token);
     }
     
     // Obtener info del usuario
+    console.log('Getting user info...');
     const userInfo = await getUserInfo(tokens.access_token);
+    console.log('User info:', userInfo);
     const email = userInfo.email;
     const name = userInfo.name || email.split('@')[0];
     
     // Guardar usuario
     users.set(userId, { email, name, connectedAt: new Date().toISOString() });
+    console.log('User saved:', userId);
     
     // Crear sesión
     const sessionId = crypto.randomBytes(32).toString('hex');
     sessions.set(sessionId, { userId, email, name });
+    console.log('Session created:', sessionId);
     
     // Set cookie
     res.cookie(cookieName, sessionId, { httpOnly: true, maxAge: 1000 * 60 * 60 * 24 * 7 }); // 7 días
+    console.log('Cookie set, redirecting...');
     
     return res.redirect('/');
   } catch (err) {
-    console.error(err);
-    return res.status(500).send('Error en callback: ' + err.message);
+    console.error('ERROR EN CALLBACK:', err);
+    return res.status(500).send(`
+      <h1>Error en callback</h1>
+      <p>${err.message}</p>
+      <pre>${err.stack}</pre>
+      <a href="/">Volver al inicio</a>
+    `);
   }
 });
 
