@@ -4,6 +4,8 @@ import { google } from 'googleapis';
 import dotenv from 'dotenv';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
+import cookieParser from 'cookie-parser';
 
 dotenv.config();
 
@@ -11,9 +13,14 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.use(cookieParser());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
+
+// Sesiones en memoria
+const sessions = new Map(); // sessionId -> { userId, email, name }
+const cookieName = 'session_id';
 
 const PORT = process.env.PORT || 3000;
 const INTERNAL_API_KEY = process.env.INTERNAL_API_KEY || 'change_me';
@@ -21,6 +28,21 @@ const N8N_WEBHOOK_URL = process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/we
 
 // Almacén en memoria para demo. En producción: DB cifrada.
 const userIdToRefreshToken = new Map();
+const users = new Map(); // userId -> { email, name, connectedAt }
+
+// Middleware para leer sesión
+function getSession(req) {
+  const sessionId = req.cookies?.session_id || req.headers.cookie?.split(';').find(c => c.trim().startsWith(`${cookieName}=`))?.split('=')[1];
+  if (!sessionId) return null;
+  return sessions.get(sessionId);
+}
+
+function requireAuth(req, res, next) {
+  const session = getSession(req);
+  if (!session) return res.status(401).json({ error: 'No autenticado' });
+  req.session = session;
+  next();
+}
 
 function getOAuth2Client() {
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -48,6 +70,14 @@ async function exchangeCodeForTokens(code) {
   return tokens;
 }
 
+async function getUserInfo(accessToken) {
+  const oauth2Client = new google.auth.OAuth2Client();
+  oauth2Client.setCredentials({ access_token: accessToken });
+  const oauth2 = google.oauth2({ auth: oauth2Client, version: 'v2' });
+  const { data } = await oauth2.userinfo.get();
+  return data;
+}
+
 async function refreshAccessToken(refreshToken) {
   const oauth2 = getOAuth2Client();
   oauth2.setCredentials({ refresh_token: refreshToken });
@@ -55,14 +85,37 @@ async function refreshAccessToken(refreshToken) {
   return credentials.access_token;
 }
 
+// API: Obtener lista de usuarios
+app.get('/api/users', (req, res) => {
+  const usersArray = Array.from(users.entries()).map(([userId, data]) => ({
+    userId,
+    ...data
+  }));
+  res.json(usersArray);
+});
+
+// API: Obtener sesión actual
+app.get('/api/session', (req, res) => {
+  const session = getSession(req);
+  res.json(session || { authenticated: false });
+});
+
+// API: Cerrar sesión
+app.post('/api/logout', (req, res) => {
+  const sessionId = req.cookies?.[cookieName];
+  if (sessionId) sessions.delete(sessionId);
+  res.clearCookie(cookieName);
+  res.json({ success: true });
+});
+
 // Página simple
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
 });
 
-// Inicia OAuth de Google para el userId indicado
+// Inicia OAuth de Google
 app.get('/auth/google', (req, res) => {
-  const userId = req.query.userId || 'demo-user-1';
+  const userId = crypto.randomBytes(16).toString('hex');
   const url = generateAuthUrl(JSON.stringify({ userId }));
   res.redirect(url);
 });
@@ -78,10 +131,26 @@ app.get('/auth/google/callback', async (req, res) => {
     if (tokens.refresh_token) {
       userIdToRefreshToken.set(userId, tokens.refresh_token);
     }
-    return res.redirect('/?connected=1');
+    
+    // Obtener info del usuario
+    const userInfo = await getUserInfo(tokens.access_token);
+    const email = userInfo.email;
+    const name = userInfo.name || email.split('@')[0];
+    
+    // Guardar usuario
+    users.set(userId, { email, name, connectedAt: new Date().toISOString() });
+    
+    // Crear sesión
+    const sessionId = crypto.randomBytes(32).toString('hex');
+    sessions.set(sessionId, { userId, email, name });
+    
+    // Set cookie
+    res.cookie(cookieName, sessionId, { httpOnly: true, maxAge: 1000 * 60 * 60 * 24 * 7 }); // 7 días
+    
+    return res.redirect('/');
   } catch (err) {
     console.error(err);
-    return res.status(500).send('Error en callback');
+    return res.status(500).send('Error en callback: ' + err.message);
   }
 });
 
@@ -102,9 +171,9 @@ app.get('/tokens/:userId', async (req, res) => {
 });
 
 // Dispara el webhook de n8n con el contexto de usuario
-app.post('/process', async (req, res) => {
+app.post('/process', requireAuth, async (req, res) => {
   try {
-    const userId = req.body?.userId || 'demo-user-1';
+    const userId = req.session.userId;
     const filtros = req.body?.filtros || {};
     const n8nRes = await fetch(N8N_WEBHOOK_URL, {
       method: 'POST',
