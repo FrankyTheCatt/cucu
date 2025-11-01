@@ -28,7 +28,10 @@
           <div class="bg-white rounded-lg shadow-md p-6" id="auth-card">
             <h2 class="text-2xl font-semibold text-gray-800 mb-4">🔐 Autenticación</h2>
             <div id="auth-content">
-              <!-- Se carga dinámicamente -->
+              <div class="text-center py-4">
+                <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                <p class="text-gray-600 mt-2">Cargando...</p>
+              </div>
             </div>
           </div>
 
@@ -100,22 +103,28 @@
       // Cargar sesión actual
       async function loadSession() {
         try {
+          console.log('Cargando sesión...');
           const res = await fetch('/api/session');
           currentSession = await res.json();
+          console.log('Sesión cargada:', currentSession);
           updateAuthUI();
         } catch (err) {
           console.error('Error loading session:', err);
+          // En caso de error, mostrar el botón de login de todas formas
+          currentSession = { authenticated: false };
+          updateAuthUI();
         }
       }
 
       // Actualizar UI de autenticación
       function updateAuthUI() {
+        console.log('Actualizando UI con sesión:', currentSession);
         const authStatus = document.getElementById('auth-status');
         const authContent = document.getElementById('auth-content');
         const authCard = document.getElementById('auth-card');
         const processCard = document.getElementById('process-card');
 
-        if (currentSession?.authenticated === false || !currentSession?.userId) {
+        if (!currentSession || currentSession.authenticated === false || !currentSession.userId) {
           authStatus.innerHTML = `
             <span class="text-gray-500">No autenticado</span>
           `;
